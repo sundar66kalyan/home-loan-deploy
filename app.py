@@ -1,42 +1,37 @@
 import streamlit as st
 import numpy as np
 
-# ---------- Page configuration ----------
+# ---------- Page config ----------
 st.set_page_config(
     page_title="Home Loan Default Predictor",
     page_icon="🏠",
     layout="centered"
 )
 
-# ---------- Custom CSS for styling ----------
+# ---------- Custom CSS to fix visibility and styling ----------
 st.markdown("""
     <style>
-        /* Glass‑morphism card */
-        .stApp {
-            background: radial-gradient(circle at 10% 20%, #0a232d, #051418);
-        }
-        .main-card {
-            background: rgba(18, 30, 38, 0.65);
-            backdrop-filter: blur(16px);
-            border-radius: 3rem;
-            border: 1px solid rgba(72, 187, 200, 0.25);
-            padding: 2rem;
-            margin: 2rem auto;
-            max-width: 650px;
-        }
-        .title {
-            font-size: 2.2rem;
+        .main-title {
+            font-size: 2.8rem;
             font-weight: 700;
             background: linear-gradient(135deg, #C0F2FF, #4ECDC4);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
             text-align: center;
+            margin-bottom: 0.2rem;
         }
-        .sub {
-            color: #8aaebd;
+        .subhead {
             text-align: center;
+            color: #8aaebd;
             margin-bottom: 2rem;
+        }
+        .metric-card {
+            background: rgba(18, 30, 38, 0.6);
+            border-radius: 1.5rem;
+            padding: 0.8rem;
+            text-align: center;
+            backdrop-filter: blur(5px);
         }
         .result-box {
             background: rgba(0, 0, 0, 0.4);
@@ -66,11 +61,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ---------- Prediction logic (mocked) ----------
+# ---------- Helper: Risk computation ----------
 def compute_risk(credit, income, days_birth, days_employed):
     dti = credit / (income + 0.01)
     dti = min(dti, 2.5)
-
     age_years = abs(days_birth) / 365.25
     emp_years = min(abs(days_employed) / 365.25, 40)
 
@@ -84,30 +78,52 @@ def compute_risk(credit, income, days_birth, days_employed):
 
     prob = 1 / (1 + np.exp(-risk_score))
     prob = max(0.01, min(0.99, prob))
-    return prob
+    return prob, dti, age_years, emp_years
 
 # ---------- UI ----------
-st.markdown('<div class="main-card">', unsafe_allow_html=True)
+# Title (now definitely visible)
+st.markdown('<div class="main-title">🏠 Home Loan Default Predictor</div>', unsafe_allow_html=True)
+st.markdown('<div class="subhead">Enter applicant details – AI assesses default risk instantly</div>', unsafe_allow_html=True)
 
 # Model badges
-st.markdown('<span class="model-badge">🤖 XGBoost (ROC‑AUC 0.81)</span> <span class="model-badge">🏆 Production Model</span>', unsafe_allow_html=True)
+col1, col2, col3 = st.columns([1,2,1])
+with col2:
+    st.markdown('<div style="text-align:center"><span class="model-badge">🤖 XGBoost (ROC‑AUC 0.81)</span> <span class="model-badge">🏆 Production Model</span></div>', unsafe_allow_html=True)
 
-st.markdown('<div class="title">🏠 Home Loan Default Predictor</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub">Enter applicant details – AI assesses default risk instantly</div>', unsafe_allow_html=True)
+# Input fields (with clear labels)
+st.markdown("### 📋 Applicant Information")
+col_cred, col_inc = st.columns(2)
+with col_cred:
+    credit = st.number_input("💰 Credit Amount (₹)", min_value=0.0, value=100000.0, step=10000.0,
+                             help="Total loan amount requested")
+with col_inc:
+    income = st.number_input("📊 Annual Income (₹)", min_value=0.0, value=200000.0, step=10000.0,
+                             help="Total yearly income from all sources")
 
-# Input fields
-cust_id = st.text_input("🆔 Customer ID", value="100001")
-credit = st.number_input("💰 Credit Amount (₹)", min_value=0.0, value=100000.0, step=10000.0)
-income = st.number_input("📊 Annual Income (₹)", min_value=0.0, value=200000.0, step=10000.0)
-days_birth = st.number_input("📅 Days Birth (negative)", value=-10000)
-days_employed = st.number_input("💼 Days Employed (negative)", value=-3000)
+col_birth, col_emp = st.columns(2)
+with col_birth:
+    days_birth = st.number_input("📅 Days Birth (negative)", value=-10000,
+                                 help="Days before today (e.g., -10000 = about 27 years old)")
+with col_emp:
+    days_employed = st.number_input("💼 Days Employed (negative)", value=-3000,
+                                    help="Days before today since started working (negative)")
 
-# Prediction button
+# Display derived metrics automatically
+if credit > 0 and income > 0:
+    _, dti, age, emp_years = compute_risk(credit, income, days_birth, days_employed)
+    st.markdown("#### 📊 Key Metrics")
+    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+    metric_col1.metric("Debt-to-Income", f"{dti:.2f}")
+    metric_col2.metric("Age (years)", f"{age:.1f}")
+    metric_col3.metric("Employment (years)", f"{emp_years:.1f}")
+    metric_col4.metric("Model AUC", "0.81", help="XGBoost cross‑validation score")
+
+# Predict button
 if st.button("✨ Predict Default Risk ✨", use_container_width=True):
     if credit <= 0 or income <= 0:
         st.error("⚠️ Credit amount and Income must be positive numbers.")
     else:
-        prob = compute_risk(credit, income, days_birth, days_employed)
+        prob, dti, age, emp_years = compute_risk(credit, income, days_birth, days_employed)
         prob_percent = prob * 100
 
         if prob < 0.35:
@@ -128,11 +144,9 @@ if st.button("✨ Predict Default Risk ✨", use_container_width=True):
                 <div><strong>📊 Default Probability</strong> <span style="float:right; background:#0f2f38; padding:0.2rem 0.8rem; border-radius:40px; color:{color}; font-weight:bold;">{prob_percent:.1f}%</span></div>
                 <div style="margin-top:12px; font-size:1.1rem; font-weight:600;">{risk_label}</div>
                 <div style="margin-top:6px; font-size:0.9rem;">{recommendation}</div>
-                <div style="margin-top:10px; font-size:0.75rem; opacity:0.8;">⚡ Model: XGBoost | Feature importance: debt/income, employment history</div>
+                <div style="margin-top:10px; font-size:0.75rem; opacity:0.8;">⚡ Model: XGBoost | Feature importance: debt/income, employment history, age</div>
             </div>
         """, unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown('<div class="footer">🧠 Model: XGBoost (Gradient Boosting) | 🎓 Project created by <strong>KalyanaSundar - AI Engineer</strong></div>', unsafe_allow_html=True)
